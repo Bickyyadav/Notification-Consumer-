@@ -1,5 +1,10 @@
-import { SQSClient, ReceiveMessageCommand } from "@aws-sdk/client-sqs";
+import {
+  SQSClient,
+  ReceiveMessageCommand,
+  DeleteMessageCommand,
+} from "@aws-sdk/client-sqs";
 import dotenv from "dotenv";
+import { sendEmail } from "./mail.js";
 dotenv.config();
 
 const sqsClient = new SQSClient({
@@ -18,21 +23,37 @@ async function main() {
   while (true) {
     const { Messages } = await sqsClient.send(command);
 
-
     if (!Messages) {
       console.log("No message found");
       continue;
     }
 
-    Messages.map(({ MessageId, Body }) => {
-      console.log("🚀 ~ Messages.map ~ Body:", Body);
-      // get order id,user name,amount paid,email,phone
-      
-      //send mail,sms
+    Messages.map(({ MessageId, Body, ReceiptHandle }) => {
+      const orderDetail = JSON.parse(Body);
+      if (orderDetail) {
+        const {
+          orderId,
+          email,
+          customerName,
+          status,
+          totalAmount,
+          phoneNumber,
+        } = orderDetail;
+        sendEmail(email, status, totalAmount, orderId, customerName);
+        //send sms
+      }
       //delete from queue
-      console.log("🚀 ~ Messages.map ~ MessageId:", MessageId);
+      deleteMessageFromQueue(ReceiptHandle);
     });
   }
 }
 
-main()
+async function deleteMessageFromQueue(ReceiptHandle) {
+  const deleteCommand = new DeleteMessageCommand({
+    QueueUrl: process.env.QUEUE_URL,
+    ReceiptHandle: ReceiptHandle,
+  });
+   await sqsClient.send(deleteCommand);
+}
+
+main();
